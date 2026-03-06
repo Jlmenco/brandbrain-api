@@ -1,0 +1,126 @@
+
+name: brand-brain
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: bb_postgres
+    environment:
+      POSTGRES_DB: brandbrain
+      POSTGRES_USER: brandbrain
+      POSTGRES_PASSWORD: brandbrain
+    ports:
+      - "5433:5432"
+    volumes:
+      - bb_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U brandbrain -d brandbrain"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    container_name: bb_redis
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - bb_redisdata:/data
+
+  api:
+    build:
+      context: ../../api
+      dockerfile: Dockerfile
+    container_name: bb_api
+    environment:
+      APP_ENV: local
+      DATABASE_URL: postgresql+psycopg://brandbrain:brandbrain@postgres:5432/brandbrain
+      REDIS_URL: redis://redis:6379/0
+      AI_DEFAULT_PROVIDER: "mock"
+      AI_CONFIDENTIAL_MODE: "false"
+      STORAGE_BASE_PATH: /data/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    ports:
+      - "8000:8000"
+    volumes:
+      - bb_storage:/data/storage
+
+  worker:
+    build:
+      context: ../../worker
+      dockerfile: Dockerfile
+    container_name: bb_worker
+    environment:
+      APP_ENV: local
+      DATABASE_URL: postgresql+psycopg://brandbrain:brandbrain@postgres:5432/brandbrain
+      REDIS_URL: redis://redis:6379/0
+      WORKER_POLL_INTERVAL: "30"
+      WORKER_BATCH_SIZE: "10"
+      WORKER_MAX_RETRIES: "3"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - bb_storage:/data/storage
+
+  web:
+    build:
+      context: ../../../brandbrain-web
+      dockerfile: Dockerfile
+    container_name: bb_web
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost/api
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
+
+  nginx:
+    image: nginx:alpine
+    container_name: bb_nginx
+    depends_on:
+      - web
+      - api
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: bb_prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+
+  loki:
+    image: grafana/loki:latest
+    container_name: bb_loki
+    ports:
+      - "3100:3100"
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: bb_grafana
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+      - loki
+    volumes:
+      - bb_grafana:/var/lib/grafana
+
+volumes:
+  bb_pgdata:
+  bb_redisdata:
+  bb_storage:
+  bb_grafana:
