@@ -37,7 +37,10 @@ services:
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
       AI_DEFAULT_PROVIDER: ${AI_DEFAULT_PROVIDER:-mock}
+      AI_MODEL: ${AI_MODEL:-}
       AI_CONFIDENTIAL_MODE: "false"
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       STORAGE_BASE_PATH: /data/storage
     depends_on:
       postgres:

@@ -21,6 +21,7 @@ class Settings(BaseSettings):
 
     # AI
     AI_DEFAULT_PROVIDER: str = "mock"
+    AI_MODEL: str = ""  # empty = use provider default
     AI_CONFIDENTIAL_MODE: bool = False
     OPENAI_API_KEY: str = ""
     ANTHROPIC_API_KEY: str = ""
