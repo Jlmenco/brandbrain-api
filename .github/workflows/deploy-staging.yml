@@ -1,0 +1,21 @@
+name: Deploy Staging
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: ${{ secrets.STAGING_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          script: |
+            cd ~/brandbrain
+            git -C brandbrain-api pull origin main
+            git -C brandbrain-web pull origin main
+            cd brandbrain-api/infra/scripts
+            ./deploy-staging.sh up
