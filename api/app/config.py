@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     SMTP_FROM_EMAIL: str = "noreply@brandbrain.dev"
     SMTP_FROM_NAME: str = "Brand Brain"
 
+    # CORS (vazio = allow all, lista separada por virgula)
+    CORS_ORIGINS: str = ""
+
     # Storage
     STORAGE_BASE_PATH: str = "/data/storage"
 
