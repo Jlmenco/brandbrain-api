@@ -9,7 +9,8 @@ fileConfig(config.config_file_name)
 
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 if DATABASE_URL:
-    config.set_main_option("sqlalchemy.url", DATABASE_URL)
+    # Escape '%' for ConfigParser interpolation (e.g. URL-encoded passwords)
+    config.set_main_option("sqlalchemy.url", DATABASE_URL.replace("%", "%%"))
 
 from sqlmodel import SQLModel
 import app.models  # noqa: F401 — registers all models in SQLModel.metadata
