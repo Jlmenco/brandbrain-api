@@ -76,7 +76,7 @@ def _process_item(session, item: ContentItem) -> None:
     session.flush()
 
     try:
-        result = publish_content(item)
+        result = publish_content(item, session=session)
 
         if result.success:
             item.status = "posted"

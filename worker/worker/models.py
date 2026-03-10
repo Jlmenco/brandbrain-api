@@ -35,6 +35,23 @@ class ContentItem(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class SocialAccount(SQLModel, table=True):
+    __tablename__ = "social_accounts"
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
+    org_id: str = Field(index=True)
+    cost_center_id: str = Field(index=True)
+    provider: str = ""  # meta | linkedin | x | tiktok | youtube
+    account_name: str = ""
+    account_id: str = ""
+    scopes: list = Field(default_factory=list, sa_column=Column(JSON, default=list))
+    token_encrypted: str = ""
+    refresh_token_encrypted: str = ""
+    token_expires_at: Optional[datetime] = None
+    status: str = Field(default="connected")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class AuditLog(SQLModel, table=True):
     __tablename__ = "audit_logs"
 

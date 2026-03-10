@@ -34,6 +34,21 @@ class Settings(BaseSettings):
     SMTP_FROM_EMAIL: str = "noreply@brandbrain.dev"
     SMTP_FROM_NAME: str = "Brand Brain"
 
+    # Social OAuth
+    LINKEDIN_CLIENT_ID: str = ""
+    LINKEDIN_CLIENT_SECRET: str = ""
+    META_APP_ID: str = ""
+    META_APP_SECRET: str = ""
+    TIKTOK_CLIENT_KEY: str = ""
+    TIKTOK_CLIENT_SECRET: str = ""
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    API_BASE_URL: str = "http://localhost:8000"
+    WEB_BASE_URL: str = "http://localhost:3000"
+
+    # Social publishing mode (mock | real)
+    SOCIAL_PUBLISH_MODE: str = "mock"
+
     # CORS (vazio = allow all, lista separada por virgula)
     CORS_ORIGINS: str = ""
 
