@@ -1,8 +1,10 @@
 import logging
 from datetime import datetime
+from pathlib import Path
 
 import redis as redis_lib
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import FileResponse
 from sqlmodel import Session, select
 
 from app.config import settings
@@ -14,7 +16,7 @@ from app.dependencies import get_current_user, check_role, ADMIN_ROLES, EDITOR_R
 from app.services.compliance import validate_content
 from app.services.audit_service import log_action
 from app.services.notification_service import notify_status_change
-from app.models.influencer import Influencer
+from app.models.influencer import Influencer, InfluencerAsset
 from app.models.cost_center import CostCenter
 
 logger = logging.getLogger(__name__)
@@ -246,3 +248,138 @@ def publish_now(item_id: str, db: Session = Depends(get_session), current_user=D
     notify_status_change(db, org_id, "publish_now", ci.id, current_user.id, ci.text)
     _signal_worker(ci.id)
     return {"status": "publishing", "id": ci.id}
+
+
+# --- Video Generation ---
+
+VIDEOS_DIR = Path(settings.STORAGE_BASE_PATH) / "videos"
+
+
+@router.post("/{content_id}/generate-video")
+async def generate_video(
+    content_id: str,
+    db: Session = Depends(get_session),
+    current_user=Depends(get_current_user),
+):
+    """Gera video lip-sync do influenciador falando o texto do conteudo.
+
+    Pipeline: Avatar (DALL-E 3) + Voz (ElevenLabs) + Video (Hedra).
+    Usa RAG context via brand kit embeddings do influenciador.
+    """
+    ci = db.get(ContentItem, content_id)
+    if not ci:
+        raise HTTPException(status_code=404, detail="Content item not found")
+
+    org_id = _get_org_id(db, ci.cost_center_id)
+    check_role(db, current_user.id, org_id, EDITOR_ROLES)
+
+    if not ci.influencer_id:
+        raise HTTPException(status_code=400, detail="Conteudo nao tem influenciador associado")
+
+    # 1. Buscar avatar do influenciador
+    avatar_asset = db.exec(
+        select(InfluencerAsset).where(
+            InfluencerAsset.influencer_id == ci.influencer_id,
+            InfluencerAsset.asset_type == "avatar",
+        )
+    ).first()
+
+    if not avatar_asset:
+        raise HTTPException(
+            status_code=400,
+            detail="Influenciador nao tem avatar gerado. Gere o avatar primeiro.",
+        )
+
+    avatar_filename = avatar_asset.metadata_json.get("filename", "")
+    avatar_path = Path(settings.STORAGE_BASE_PATH) / "avatars" / avatar_filename
+    if not avatar_path.exists():
+        raise HTTPException(status_code=400, detail="Arquivo de avatar nao encontrado no disco")
+
+    image_bytes = avatar_path.read_bytes()
+
+    # 2. Gerar voz com ElevenLabs
+    from app.services.voice_service import VoiceService
+    voice_svc = VoiceService()
+
+    # Limitar texto para TTS (ElevenLabs tem limite de ~5000 chars)
+    tts_text = ci.text[:5000]
+    try:
+        audio_bytes = await voice_svc.generate_speech(tts_text)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Erro ao gerar voz: {e}")
+
+    # 3. Gerar video lip-sync com Hedra
+    from app.services.video_service import VideoService
+    video_svc = VideoService()
+
+    # Aspect ratio baseado na plataforma
+    aspect_map = {
+        "tiktok": "9:16",
+        "instagram": "9:16",
+        "youtube": "16:9",
+        "linkedin": "1:1",
+        "facebook": "1:1",
+    }
+    aspect_ratio = aspect_map.get(ci.provider_target, "9:16")
+
+    try:
+        video_url, video_bytes = await video_svc.generate_talking_video(
+            image_bytes=image_bytes,
+            audio_bytes=audio_bytes,
+            aspect_ratio=aspect_ratio,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Erro ao gerar video: {e}")
+
+    # 4. Salvar video localmente
+    import uuid
+    VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
+    video_filename = f"{content_id}_{uuid.uuid4().hex[:8]}.mp4"
+    video_path = VIDEOS_DIR / video_filename
+    video_path.write_bytes(video_bytes)
+
+    # 5. Atualizar media_refs do conteudo
+    media_refs = ci.media_refs or []
+    # Remover videos anteriores
+    media_refs = [m for m in media_refs if m.get("type") != "video"]
+    media_refs.append({
+        "type": "video",
+        "url": f"/content/{content_id}/video",
+        "filename": video_filename,
+        "source": "hedra",
+    })
+    ci.media_refs = media_refs
+    ci.updated_at = datetime.utcnow()
+    db.add(ci)
+    db.commit()
+
+    log_action(db, org_id, ci.cost_center_id, current_user.id, "generate_video", "content_item", ci.id)
+
+    return {
+        "status": "success",
+        "video_url": f"/content/{content_id}/video",
+        "filename": video_filename,
+    }
+
+
+@router.get("/{content_id}/video")
+async def get_video(
+    content_id: str,
+    db: Session = Depends(get_session),
+    current_user=Depends(get_current_user),
+):
+    """Retorna o video gerado de um conteudo."""
+    ci = db.get(ContentItem, content_id)
+    if not ci:
+        raise HTTPException(status_code=404, detail="Content item not found")
+
+    media_refs = ci.media_refs or []
+    video_ref = next((m for m in media_refs if m.get("type") == "video"), None)
+    if not video_ref:
+        raise HTTPException(status_code=404, detail="Video nao encontrado")
+
+    video_path = VIDEOS_DIR / video_ref["filename"]
+    if not video_path.exists():
+        raise HTTPException(status_code=404, detail="Arquivo de video nao encontrado")
+
+    return FileResponse(video_path, media_type="video/mp4")

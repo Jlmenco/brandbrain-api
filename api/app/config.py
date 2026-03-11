@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     AI_CONFIDENTIAL_MODE: bool = False
     OPENAI_API_KEY: str = ""
     ANTHROPIC_API_KEY: str = ""
+    ELEVENLABS_API_KEY: str = ""
+    HEDRA_API_KEY: str = ""
 
     # SMTP (vazio = modo simulacao, sem envio real)
     SMTP_HOST: str = ""
