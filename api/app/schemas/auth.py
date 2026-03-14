@@ -19,3 +19,4 @@ class UserResponse(BaseModel):
     email: str
     name: str
     is_active: bool
+    is_superadmin: bool = False
