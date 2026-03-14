@@ -51,6 +51,19 @@ class Settings(BaseSettings):
     # Social publishing mode (mock | real)
     SOCIAL_PUBLISH_MODE: str = "mock"
 
+    # AWS SES (se configurado, usa boto3 em vez de SMTP)
+    AWS_SES_REGION: str = ""
+    AWS_ACCESS_KEY_ID: str = ""
+    AWS_SECRET_ACCESS_KEY: str = ""
+
+    # Asaas (gateway de pagamento brasileiro)
+    ASAAS_API_KEY: str = ""
+    ASAAS_SANDBOX: bool = True  # mudar para False em producao
+    ASAAS_WEBHOOK_TOKEN: str = ""  # token configurado no painel Asaas para validar webhooks
+
+    # Bootstrap — secret para setar o primeiro superadmin (vazio = desabilitado)
+    BOOTSTRAP_SECRET: str = ""
+
     # CORS (vazio = allow all, lista separada por virgula)
     CORS_ORIGINS: str = ""
 

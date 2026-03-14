@@ -31,6 +31,8 @@ class ContentItem(SQLModel, table=True):
     retry_count: int = Field(default=0)
     next_retry_at: Optional[datetime] = None
     last_error: Optional[str] = None
+    video_job_status: Optional[str] = Field(default=None)
+    video_job_error: Optional[str] = Field(default=None)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 

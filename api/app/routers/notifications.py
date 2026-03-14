@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlmodel import Session, select
 from sqlalchemy import func
 
@@ -8,6 +9,23 @@ from app.models.notification import Notification
 from app.schemas.notification import PaginatedNotificationResponse, UnreadCountResponse
 
 router = APIRouter()
+
+
+class PushTokenBody(BaseModel):
+    token: str
+
+
+@router.post("/push-token")
+def register_push_token(
+    body: PushTokenBody,
+    db: Session = Depends(get_session),
+    current_user=Depends(get_current_user),
+):
+    """Registra o Expo push token do dispositivo mobile para o usuario logado."""
+    current_user.push_token = body.token
+    db.add(current_user)
+    db.commit()
+    return {"ok": True}
 
 
 @router.get("", response_model=PaginatedNotificationResponse)

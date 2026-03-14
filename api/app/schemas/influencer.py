@@ -13,6 +13,7 @@ class InfluencerCreate(BaseModel):
     allowed_words: list = []
     cta_style: str = ""
     language: str = "pt-BR"
+    voice_id: Optional[str] = None
 
 class InfluencerUpdate(BaseModel):
     name: Optional[str] = None
@@ -24,6 +25,7 @@ class InfluencerUpdate(BaseModel):
     allowed_words: Optional[list] = None
     cta_style: Optional[str] = None
     is_active: Optional[bool] = None
+    voice_id: Optional[str] = None
 
 class InfluencerResponse(BaseModel):
     id: str
@@ -39,6 +41,7 @@ class InfluencerResponse(BaseModel):
     allowed_words: list = []
     cta_style: str = ""
     language: str
+    voice_id: Optional[str] = None
     is_active: bool
 
 class BrandKitCreate(BaseModel):

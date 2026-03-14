@@ -24,6 +24,7 @@ class Influencer(SQLModel, table=True):
     allowed_words: list = Field(default_factory=list, sa_column=Column(JSON, default=list))
     cta_style: str = ""
     language: str = Field(default="pt-BR")
+    voice_id: Optional[str] = Field(default=None)  # ElevenLabs voice ID
     is_active: bool = Field(default=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 

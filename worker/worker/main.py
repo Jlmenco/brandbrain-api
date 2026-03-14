@@ -15,6 +15,7 @@ import threading
 from worker.config import settings
 from worker.scheduler import poll_and_process
 from worker.signals import SignalListener
+from worker.database import get_session
 
 logging.basicConfig(
     level=logging.INFO,
@@ -66,6 +67,16 @@ def main():
                 logger.info("Poll cycle complete: processed %d items", processed)
         except Exception:
             logger.exception("Error in poll cycle")
+
+        # Processar jobs de video pendentes
+        try:
+            from worker.video_processor import poll_video_jobs
+            with get_session() as session:
+                video_processed = poll_video_jobs(session)
+            if video_processed > 0:
+                logger.info("Video jobs processed: %d", video_processed)
+        except Exception:
+            logger.exception("Error in video job cycle")
 
         _wake_event.wait(timeout=settings.POLL_INTERVAL_SECONDS)
         _wake_event.clear()

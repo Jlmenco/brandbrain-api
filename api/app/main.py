@@ -50,7 +50,11 @@ from app.routers import (  # noqa: E402
     agent_market,
     audit,
     notifications,
+    templates,
+    webhooks,
+    usage,
 )
+from app.routers import invites, admin, billing  # noqa: E402
 
 app.include_router(auth.router, prefix="/auth", tags=["Auth"])
 app.include_router(organizations.router, prefix="/orgs", tags=["Organizations"])
@@ -67,3 +71,9 @@ app.include_router(agent_marketing.router, prefix="/agent/marketing", tags=["Mar
 app.include_router(agent_market.router, prefix="/agent/market", tags=["Market Agent"])
 app.include_router(audit.router, prefix="/audit-logs", tags=["Audit"])
 app.include_router(notifications.router, prefix="/notifications", tags=["Notifications"])
+app.include_router(templates.router, prefix="/templates", tags=["Templates"])
+app.include_router(webhooks.router, prefix="/webhooks", tags=["Webhooks"])
+app.include_router(usage.router, prefix="/usage", tags=["Usage & Billing"])
+app.include_router(invites.router, prefix="/invite", tags=["Invites"])
+app.include_router(admin.router, prefix="/admin", tags=["Admin"])
+app.include_router(billing.router, prefix="/billing", tags=["Billing"])

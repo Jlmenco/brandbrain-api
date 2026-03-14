@@ -149,6 +149,10 @@ async def generate_avatar(
     if not settings.OPENAI_API_KEY:
         raise HTTPException(status_code=400, detail="OPENAI_API_KEY nao configurada. Necessaria para gerar avatar.")
 
+    # Verificar quota mensal de avatar
+    from app.services.usage_service import check_quota
+    check_quota(db, inf.org_id, "avatar")
+
     # Buscar brand kit para enriquecer o prompt
     bk = db.exec(select(BrandKit).where(BrandKit.influencer_id == influencer_id)).first()
     prompt = _build_avatar_prompt(inf, bk)
@@ -216,6 +220,15 @@ async def generate_avatar(
             db.add(asset)
 
         db.commit()
+
+        # Registrar uso de DALL-E 3
+        try:
+            from app.services.usage_service import log_usage
+            log_usage(db, inf.org_id, "avatar", "dalle", 1, "images", user_id=current_user.id,
+                      metadata={"influencer_id": influencer_id})
+        except Exception:
+            pass
+
         logger.info("Avatar gerado para influenciador %s: %s", influencer_id, filename)
 
         return {
@@ -227,6 +240,15 @@ async def generate_avatar(
     except Exception as e:
         logger.error("Erro ao gerar avatar para %s: %s", influencer_id, str(e))
         raise HTTPException(status_code=500, detail=f"Erro ao gerar avatar: {str(e)}")
+
+
+@router.get("/voices")
+async def list_voices(current_user=Depends(get_current_user)):
+    """Lista vozes disponíveis no ElevenLabs para configurar por influenciador."""
+    from app.services.voice_service import VoiceService
+    svc = VoiceService()
+    voices = await svc.list_voices()
+    return {"voices": voices}
 
 
 @router.get("/{influencer_id}/avatar")

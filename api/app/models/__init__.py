@@ -18,3 +18,6 @@ from app.models.market import (  # noqa: F401
     ContentBrief,
 )
 from app.models.embedding import BrandKitEmbedding  # noqa: F401
+from app.models.template import ContentTemplate  # noqa: F401
+from app.models.usage import UsageLog  # noqa: F401
+from app.models.webhook import WebhookConfig  # noqa: F401

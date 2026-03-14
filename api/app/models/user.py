@@ -13,6 +13,8 @@ class User(SQLModel, table=True):
     name: str
     hashed_password: str
     is_active: bool = Field(default=True)
+    is_superadmin: bool = Field(default=False)
+    push_token: Optional[str] = Field(default=None)  # Expo push notification token
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 

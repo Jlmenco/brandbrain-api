@@ -39,6 +39,9 @@ _test_tables = [
     "campaigns",
     "audit_logs",
     "notifications",
+    "content_templates",
+    "usage_logs",
+    "webhook_configs",
 ]
 
 

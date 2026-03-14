@@ -106,3 +106,22 @@ def notify_status_change(
     if recipients:
         db.commit()
         logger.info(f"Notificacoes criadas: {action} → {len(recipients)} destinatarios")
+
+    # Push notifications para dispositivos mobile
+    try:
+        from app.services.push_service import send_push_to_users
+        sent = send_push_to_users(
+            recipients, title, body,
+            data={"action": action, "content_item_id": content_item_id},
+        )
+        if sent:
+            logger.info("Push enviado para %d dispositivos", sent)
+    except Exception as e:
+        logger.warning("Erro ao enviar push notifications: %s", e)
+
+    # Dispatch webhooks reais (Slack, Discord, Teams, Custom)
+    try:
+        from app.services.webhook_service import dispatch_webhooks
+        dispatch_webhooks(db, org_id, action, content_item_id, text_preview)
+    except Exception as e:
+        logger.warning("Erro ao disparar webhooks: %s", e)

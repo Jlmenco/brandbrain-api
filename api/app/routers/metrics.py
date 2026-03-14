@@ -6,7 +6,7 @@ from app.database import get_session
 from app.models.metrics import MetricsDaily
 from app.models.content import ContentItem
 from app.schemas.metrics import MetricsDailyResponse, MetricsOverview
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, check_role, ADMIN_ROLES
 
 router = APIRouter()
 
@@ -58,3 +58,36 @@ def get_overview(cc_id: str = Query(...), from_date: date = Query(None), to_date
         total_followers_delta=row[5],
         total_posts=row[6],
     )
+
+
+@router.post("/sync")
+def sync_metrics(
+    cc_id: str = Query(...),
+    db: Session = Depends(get_session),
+    current_user=Depends(get_current_user),
+):
+    """Sincroniza métricas reais de todos os conteúdos publicados do cost center."""
+    from app.models.cost_center import CostCenter
+    cc = db.get(CostCenter, cc_id)
+    if not cc:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Cost center not found")
+    check_role(db, current_user.id, cc.org_id, ADMIN_ROLES)
+
+    from app.services.metrics_sync_service import sync_metrics_for_content
+    posted = db.exec(
+        select(ContentItem)
+        .where(ContentItem.cost_center_id == cc_id, ContentItem.status == "posted")
+        .limit(50)
+    ).all()
+
+    synced = 0
+    errors = 0
+    for item in posted:
+        result = sync_metrics_for_content(db, item.id)
+        if result.get("error") or result.get("skipped"):
+            errors += 1
+        else:
+            synced += 1
+
+    return {"synced": synced, "errors": errors, "total": len(posted)}

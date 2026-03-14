@@ -60,6 +60,8 @@ class ContentItemResponse(BaseModel):
     retry_count: int = 0
     next_retry_at: Optional[datetime] = None
     last_error: Optional[str] = None
+    video_job_status: Optional[str] = None
+    video_job_error: Optional[str] = None
 
 class PaginatedContentResponse(BaseModel):
     items: list[ContentItemResponse] = []

@@ -124,6 +124,11 @@ def submit_review(item_id: str, db: Session = Depends(get_session), current_user
         result = validate_content(ci.text, inf)
         if not result["valid"]:
             raise HTTPException(status_code=422, detail={"compliance_issues": result["issues"]})
+    # Guard: Solo orgs skip review — approve directly
+    from app.models.organization import Organization
+    org = db.get(Organization, org_id)
+    if org and org.account_type == "solo":
+        raise HTTPException(status_code=400, detail="Perfil Solo nao usa fluxo de revisao. Use /approve diretamente.")
     ci.status = "review"
     ci.updated_at = datetime.utcnow()
     db.add(ci)
@@ -215,6 +220,74 @@ def schedule(item_id: str, body: ScheduleRequest, db: Session = Depends(get_sess
     return {"status": "scheduled", "id": ci.id, "scheduled_at": str(ci.scheduled_at)}
 
 
+@router.post("/batch-action")
+def batch_action(
+    body: dict,
+    db: Session = Depends(get_session),
+    current_user=Depends(get_current_user),
+):
+    """Executa acao em lote em multiplos content items.
+
+    Body: { "ids": [...], "action": "approve" | "reject" | "submit_review" | "request_changes", "notes": "" }
+    """
+    ids: list[str] = body.get("ids", [])
+    action: str = body.get("action", "")
+    notes: str = body.get("notes", "")
+
+    if not ids or not action:
+        raise HTTPException(status_code=400, detail="ids e action sao obrigatorios")
+    if action not in ("approve", "reject", "submit_review", "request_changes"):
+        raise HTTPException(status_code=400, detail=f"Acao invalida: {action}")
+
+    results: dict = {"success": [], "failed": []}
+
+    for item_id in ids:
+        ci = db.get(ContentItem, item_id)
+        if not ci:
+            results["failed"].append({"id": item_id, "reason": "not found"})
+            continue
+
+        org_id = _get_org_id(db, ci.cost_center_id)
+        try:
+            if action == "approve":
+                check_role(db, current_user.id, org_id, ADMIN_ROLES)
+                if ci.status != "review":
+                    results["failed"].append({"id": item_id, "reason": f"status={ci.status}"}); continue
+                db.add(Approval(content_item_id=ci.id, reviewer_user_id=current_user.id, decision="approve", notes=notes))
+                ci.status = "approved"
+
+            elif action == "reject":
+                check_role(db, current_user.id, org_id, ADMIN_ROLES)
+                if ci.status != "review":
+                    results["failed"].append({"id": item_id, "reason": f"status={ci.status}"}); continue
+                db.add(Approval(content_item_id=ci.id, reviewer_user_id=current_user.id, decision="reject", notes=notes))
+                ci.status = "rejected"
+
+            elif action == "submit_review":
+                check_role(db, current_user.id, org_id, EDITOR_ROLES)
+                if ci.status != "draft":
+                    results["failed"].append({"id": item_id, "reason": f"status={ci.status}"}); continue
+                ci.status = "review"
+
+            elif action == "request_changes":
+                check_role(db, current_user.id, org_id, ADMIN_ROLES)
+                if ci.status != "review":
+                    results["failed"].append({"id": item_id, "reason": f"status={ci.status}"}); continue
+                db.add(Approval(content_item_id=ci.id, reviewer_user_id=current_user.id, decision="request_changes", notes=notes))
+                ci.status = "draft"
+
+            ci.updated_at = datetime.utcnow()
+            db.add(ci)
+            log_action(db, org_id, ci.cost_center_id, current_user.id, f"batch_{action}", "content_item", ci.id)
+            results["success"].append(item_id)
+
+        except HTTPException as e:
+            results["failed"].append({"id": item_id, "reason": e.detail})
+
+    db.commit()
+    return results
+
+
 def _signal_worker(content_item_id: str) -> None:
     """Send a Redis signal to wake the worker for immediate processing."""
     try:
@@ -250,21 +323,32 @@ def publish_now(item_id: str, db: Session = Depends(get_session), current_user=D
     return {"status": "publishing", "id": ci.id}
 
 
-# --- Video Generation ---
+# --- Video Generation (fila assincrona via Worker) ---
 
 VIDEOS_DIR = Path(settings.STORAGE_BASE_PATH) / "videos"
+VIDEO_SIGNAL_CHANNEL = "bb:video_signal"
+
+
+def _signal_video_worker(content_item_id: str) -> None:
+    """Envia sinal Redis para o worker iniciar geracao de video."""
+    try:
+        r = redis_lib.from_url(settings.REDIS_URL)
+        r.publish(VIDEO_SIGNAL_CHANNEL, content_item_id)
+        r.close()
+    except Exception:
+        logger.warning("Could not signal video worker via Redis")
 
 
 @router.post("/{content_id}/generate-video")
-async def generate_video(
+def generate_video(
     content_id: str,
     db: Session = Depends(get_session),
     current_user=Depends(get_current_user),
 ):
-    """Gera video lip-sync do influenciador falando o texto do conteudo.
+    """Enfileira geracao de video lip-sync do influenciador.
 
-    Pipeline: Avatar (DALL-E 3) + Voz (ElevenLabs) + Video (Hedra).
-    Usa RAG context via brand kit embeddings do influenciador.
+    O processamento real (ElevenLabs + Hedra) ocorre no Worker de forma assincrona.
+    Use GET /{content_id} e verifique video_job_status para acompanhar o progresso.
     """
     ci = db.get(ContentItem, content_id)
     if not ci:
@@ -276,102 +360,66 @@ async def generate_video(
     if not ci.influencer_id:
         raise HTTPException(status_code=400, detail="Conteudo nao tem influenciador associado")
 
-    # 1. Buscar avatar do influenciador
+    # Validar que avatar existe antes de enfileirar
     avatar_asset = db.exec(
         select(InfluencerAsset).where(
             InfluencerAsset.influencer_id == ci.influencer_id,
             InfluencerAsset.asset_type == "avatar",
         )
     ).first()
-
     if not avatar_asset:
         raise HTTPException(
             status_code=400,
             detail="Influenciador nao tem avatar gerado. Gere o avatar primeiro.",
         )
 
-    avatar_filename = avatar_asset.metadata_json.get("filename", "")
-    avatar_path = Path(settings.STORAGE_BASE_PATH) / "avatars" / avatar_filename
-    if not avatar_path.exists():
-        raise HTTPException(status_code=400, detail="Arquivo de avatar nao encontrado no disco")
+    # Verificar quota mensal de video
+    from app.services.usage_service import check_quota
+    check_quota(db, org_id, "video")
 
-    image_bytes = avatar_path.read_bytes()
-
-    # 2. Gerar voz com ElevenLabs
-    from app.services.voice_service import VoiceService
-    voice_svc = VoiceService()
-
-    # Limitar texto para TTS (ElevenLabs tem limite de ~5000 chars)
-    tts_text = ci.text[:5000]
-    try:
-        audio_bytes = await voice_svc.generate_speech(tts_text)
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Erro ao gerar voz: {e}")
-
-    # 3. Gerar video lip-sync com Hedra
-    from app.services.video_service import VideoService
-    video_svc = VideoService()
-
-    # Aspect ratio baseado na plataforma
-    aspect_map = {
-        "tiktok": "9:16",
-        "instagram": "9:16",
-        "youtube": "16:9",
-        "linkedin": "1:1",
-        "facebook": "1:1",
-    }
-    aspect_ratio = aspect_map.get(ci.provider_target, "9:16")
-
-    try:
-        video_url, video_bytes = await video_svc.generate_talking_video(
-            image_bytes=image_bytes,
-            audio_bytes=audio_bytes,
-            aspect_ratio=aspect_ratio,
-        )
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Erro ao gerar video: {e}")
-
-    # 4. Salvar video localmente
-    import uuid
-    VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
-    video_filename = f"{content_id}_{uuid.uuid4().hex[:8]}.mp4"
-    video_path = VIDEOS_DIR / video_filename
-    video_path.write_bytes(video_bytes)
-
-    # 5. Atualizar media_refs do conteudo
-    media_refs = ci.media_refs or []
-    # Remover videos anteriores
-    media_refs = [m for m in media_refs if m.get("type") != "video"]
-    media_refs.append({
-        "type": "video",
-        "url": f"/content/{content_id}/video",
-        "filename": video_filename,
-        "source": "hedra",
-    })
-    ci.media_refs = media_refs
+    # Marcar como pendente e sinalizar worker
+    ci.video_job_status = "pending"
+    ci.video_job_error = None
     ci.updated_at = datetime.utcnow()
     db.add(ci)
     db.commit()
 
-    log_action(db, org_id, ci.cost_center_id, current_user.id, "generate_video", "content_item", ci.id)
+    _signal_video_worker(ci.id)
+    log_action(db, org_id, ci.cost_center_id, current_user.id, "generate_video_queued", "content_item", ci.id)
 
-    return {
-        "status": "success",
-        "video_url": f"/content/{content_id}/video",
-        "filename": video_filename,
-    }
+    # Tracking de uso estimado (TTS + video)
+    try:
+        from app.services.usage_service import log_usage
+        tts_chars = len(ci.text[:5000])
+        log_usage(db, org_id, "tts", "elevenlabs", tts_chars, "chars",
+                  cost_center_id=ci.cost_center_id, user_id=current_user.id,
+                  metadata={"content_id": ci.id})
+        log_usage(db, org_id, "video", "hedra", 30, "seconds",
+                  cost_center_id=ci.cost_center_id, user_id=current_user.id,
+                  metadata={"content_id": ci.id})
+    except Exception:
+        pass
+
+    return {"status": "pending", "id": ci.id}
 
 
 @router.get("/{content_id}/video")
-async def get_video(
+def get_video(
     content_id: str,
     db: Session = Depends(get_session),
     current_user=Depends(get_current_user),
 ):
-    """Retorna o video gerado de um conteudo."""
+    """Retorna o video gerado de um conteudo (apos video_job_status='done')."""
     ci = db.get(ContentItem, content_id)
     if not ci:
         raise HTTPException(status_code=404, detail="Content item not found")
+
+    if ci.video_job_status == "pending":
+        raise HTTPException(status_code=202, detail="Video ainda sendo processado")
+    if ci.video_job_status == "processing":
+        raise HTTPException(status_code=202, detail="Video sendo gerado...")
+    if ci.video_job_status == "failed":
+        raise HTTPException(status_code=500, detail=f"Falha na geracao: {ci.video_job_error}")
 
     media_refs = ci.media_refs or []
     video_ref = next((m for m in media_refs if m.get("type") == "video"), None)
@@ -380,6 +428,6 @@ async def get_video(
 
     video_path = VIDEOS_DIR / video_ref["filename"]
     if not video_path.exists():
-        raise HTTPException(status_code=404, detail="Arquivo de video nao encontrado")
+        raise HTTPException(status_code=404, detail="Arquivo de video nao encontrado no disco")
 
     return FileResponse(video_path, media_type="video/mp4")
