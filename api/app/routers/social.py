@@ -214,6 +214,16 @@ def callback(
     db.commit()
     logger.info("Conta %s conectada: %s (%s)", provider, account_name, account_id)
 
+    # Auto-complete onboarding step for org owner
+    try:
+        from app.services.onboarding_service import complete_step
+        from app.models.user import OrgMember
+        owner = db.exec(select(OrgMember).where(OrgMember.org_id == org_id, OrgMember.role == "owner")).first()
+        if owner:
+            complete_step(db, owner.user_id, org_id, "connect_social")
+    except Exception:
+        pass
+
     return RedirectResponse(url=f"{os.getenv('WEB_BASE_URL', 'http://localhost:3000')}/configuracoes?social_connected={provider}")
 
 

@@ -35,6 +35,12 @@ def create_influencer(body: InfluencerCreate, org_id: str = Query(...), db: Sess
     db.add(inf)
     db.commit()
     db.refresh(inf)
+    # Auto-complete onboarding step
+    try:
+        from app.services.onboarding_service import complete_step
+        complete_step(db, current_user.id, org_id, "first_influencer")
+    except Exception:
+        pass
     return inf
 
 
@@ -80,6 +86,12 @@ def upsert_brand_kit(influencer_id: str, body: BrandKitCreate, db: Session = Dep
     db.commit()
     db.refresh(bk)
     _auto_embed(db, influencer_id)
+    # Auto-complete onboarding step
+    try:
+        from app.services.onboarding_service import complete_step
+        complete_step(db, current_user.id, inf.org_id, "brand_kit")
+    except Exception:
+        pass
     return bk
 
 

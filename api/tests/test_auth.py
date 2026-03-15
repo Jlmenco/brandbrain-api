@@ -4,22 +4,21 @@ from fastapi.testclient import TestClient
 def test_register(client: TestClient):
     resp = client.post(
         "/auth/register",
-        json={"email": "new@brandbrain.dev", "password": "pass123"},
+        json={"name": "Novo Usuario", "email": "new@brandbrain.dev", "password": "pass123", "org_name": "Minha Org"},
     )
     assert resp.status_code == 200
     data = resp.json()
-    assert data["email"] == "new@brandbrain.dev"
-    assert data["name"] == "new"
-    assert "id" in data
+    assert "access_token" in data
+    assert data["token_type"] == "bearer"
 
 
 def test_register_duplicate(client: TestClient, test_user):
     resp = client.post(
         "/auth/register",
-        json={"email": test_user.email, "password": "pass123"},
+        json={"name": "Dup", "email": test_user.email, "password": "pass123", "org_name": "Org Dup"},
     )
     assert resp.status_code == 400
-    assert "already registered" in resp.json()["detail"]
+    assert "cadastrado" in resp.json()["detail"].lower()
 
 
 def test_login(client: TestClient, test_user):

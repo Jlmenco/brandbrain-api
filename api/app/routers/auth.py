@@ -45,6 +45,20 @@ def register(body: RegisterRequest, db: Session = Depends(get_session)):
     db.add(member)
     db.commit()
 
+    # Auto-enroll em campanhas drip de boas-vindas
+    try:
+        from app.services.drip_service import auto_enroll_on_event
+        auto_enroll_on_event(db, "welcome", user.id, org.id)
+    except Exception:
+        pass  # Nao deve bloquear registro
+
+    # Auto-complete onboarding profile_setup
+    try:
+        from app.services.onboarding_service import complete_step
+        complete_step(db, user.id, org.id, "profile_setup")
+    except Exception:
+        pass
+
     token = create_access_token({"sub": user.id, "email": user.email})
     return TokenResponse(access_token=token)
 

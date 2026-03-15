@@ -39,8 +39,8 @@ def test_batch_submit_review(client: TestClient, session: Session, test_cc, test
     })
     assert resp.status_code == 200
     data = resp.json()
-    assert data["success"] == 3
-    assert data["errors"] == 0
+    assert len(data["success"]) == 3
+    assert len(data["failed"]) == 0
 
     for ci_id in ids:
         get_resp = client.get(f"/content-items/{ci_id}")
@@ -60,8 +60,8 @@ def test_batch_approve(client: TestClient, session: Session, test_cc, test_influ
     })
     assert resp.status_code == 200
     data = resp.json()
-    assert data["success"] == 2
-    assert data["errors"] == 0
+    assert len(data["success"]) == 2
+    assert len(data["failed"]) == 0
 
     for ci_id in ids:
         get_resp = client.get(f"/content-items/{ci_id}")
@@ -82,7 +82,7 @@ def test_batch_reject(client: TestClient, session: Session, test_cc, test_influe
     })
     assert resp.status_code == 200
     data = resp.json()
-    assert data["success"] == 2
+    assert len(data["success"]) == 2
 
     for ci_id in ids:
         get_resp = client.get(f"/content-items/{ci_id}")
@@ -99,7 +99,7 @@ def test_batch_partial_errors(client: TestClient, session: Session, test_cc, tes
 
     ids = [ci.id for ci in valid] + [ci.id for ci in invalid]
 
-    # Tenta aprovar todos — validos estao em draft, nao em review
+    # Tenta aprovar todos — todos estao em draft, nao em review
     resp = client.post("/content-items/batch-action", json={
         "ids": ids,
         "action": "approve",
@@ -107,7 +107,7 @@ def test_batch_partial_errors(client: TestClient, session: Session, test_cc, tes
     })
     assert resp.status_code == 200
     data = resp.json()
-    assert data["errors"] >= 1
+    assert len(data["failed"]) >= 1
 
 
 # ---------- lista vazia ----------
@@ -118,9 +118,7 @@ def test_batch_empty_ids(client: TestClient, test_org):
         "action": "submit_review",
         "org_id": test_org.id,
     })
-    assert resp.status_code in (200, 422)
-    if resp.status_code == 200:
-        assert resp.json()["success"] == 0
+    assert resp.status_code == 400
 
 
 # ---------- acao invalida ----------

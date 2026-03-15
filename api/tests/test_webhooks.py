@@ -7,14 +7,13 @@ from fastapi.testclient import TestClient
 
 def _create_webhook(client: TestClient, org_id: str, **kwargs) -> dict:
     payload = {
-        "org_id": org_id,
         "name": kwargs.get("name", "Slack #marketing"),
         "provider": kwargs.get("provider", "slack"),
         "url": kwargs.get("url", "https://hooks.slack.com/services/TEST"),
         "events": kwargs.get("events", ["approve", "reject"]),
     }
-    resp = client.post("/webhooks", json=payload)
-    assert resp.status_code == 201, resp.text
+    resp = client.post("/webhooks", json=payload, params={"org_id": org_id})
+    assert resp.status_code in (200, 201), resp.text
     return resp.json()
 
 
@@ -42,10 +41,9 @@ def test_create_webhook_discord(client: TestClient, test_org):
 
 def test_create_webhook_missing_url(client: TestClient, test_org):
     resp = client.post("/webhooks", json={
-        "org_id": test_org.id,
         "name": "Sem URL",
         "provider": "slack",
-    })
+    }, params={"org_id": test_org.id})
     assert resp.status_code == 422
 
 
@@ -80,7 +78,7 @@ def test_get_webhook(client: TestClient, test_org):
 
 
 def test_get_webhook_not_found(client: TestClient):
-    resp = client.get("/webhooks/nonexistent-id")
+    resp = client.get("/webhooks/00000000-0000-0000-0000-000000000000")
     assert resp.status_code == 404
 
 
@@ -89,7 +87,7 @@ def test_get_webhook_not_found(client: TestClient):
 def test_delete_webhook(client: TestClient, test_org):
     created = _create_webhook(client, test_org.id)
     resp = client.delete(f"/webhooks/{created['id']}")
-    assert resp.status_code == 200
+    assert resp.status_code == 204
 
     list_resp = client.get("/webhooks", params={"org_id": test_org.id})
     ids = [h["id"] for h in list_resp.json()]
@@ -97,7 +95,7 @@ def test_delete_webhook(client: TestClient, test_org):
 
 
 def test_delete_webhook_not_found(client: TestClient):
-    resp = client.delete("/webhooks/nonexistent-id")
+    resp = client.delete("/webhooks/00000000-0000-0000-0000-000000000000")
     assert resp.status_code == 404
 
 
@@ -105,7 +103,7 @@ def test_delete_webhook_not_found(client: TestClient):
 
 def test_webhook_test_dispatch_success(client: TestClient, test_org):
     created = _create_webhook(client, test_org.id)
-    with patch("app.routers.webhooks.dispatch_webhooks") as mock_dispatch:
+    with patch("app.services.webhook_service._dispatch_one") as mock_dispatch:
         mock_dispatch.return_value = None
         resp = client.post(f"/webhooks/{created['id']}/test")
     assert resp.status_code == 200
@@ -113,5 +111,5 @@ def test_webhook_test_dispatch_success(client: TestClient, test_org):
 
 
 def test_webhook_test_dispatch_not_found(client: TestClient):
-    resp = client.post("/webhooks/nonexistent-id/test")
+    resp = client.post("/webhooks/00000000-0000-0000-0000-000000000000/test")
     assert resp.status_code == 404

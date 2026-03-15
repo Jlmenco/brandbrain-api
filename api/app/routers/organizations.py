@@ -169,8 +169,8 @@ def upgrade_org(
 def group_summary(org_id: str, db: Session = Depends(get_session), current_user=Depends(get_current_user)):
     """Retorna metricas consolidadas das filiais de um grupo."""
     from app.models.cost_center import CostCenter
-    from app.models.content_item import ContentItem
-    from app.models.lead import Lead
+    from app.models.content import ContentItem
+    from app.models.tracking import Lead
 
     check_role(db, current_user.id, org_id, ADMIN_ROLES)
     org = db.get(Organization, org_id)

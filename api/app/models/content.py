@@ -43,6 +43,8 @@ class ContentItem(SQLModel, table=True):
     retry_count: int = Field(default=0)
     next_retry_at: Optional[datetime] = None
     last_error: Optional[str] = None
+    # Repurpose: link para conteudo original
+    source_repurpose_id: Optional[str] = Field(default=None, foreign_key="content_items.id", index=True)
     # Fila assincrona de geracao de video
     video_job_status: Optional[str] = Field(default=None)  # pending | processing | done | failed
     video_job_error: Optional[str] = Field(default=None)

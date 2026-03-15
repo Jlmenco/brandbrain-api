@@ -13,6 +13,9 @@ from app.models.influencer import Influencer, BrandKit
 from app.models.content import ContentItem, Approval
 from app.models.metrics import MetricsDaily
 from app.models.notification import Notification
+from app.models.drip import DripCampaign, DripStep, DripEnrollment
+from app.models.onboarding import OnboardingProgress
+from app.models.editorial import EditorialPlan, EditorialSlot
 from app.services.auth_service import hash_password
 
 
@@ -42,6 +45,12 @@ _test_tables = [
     "content_templates",
     "usage_logs",
     "webhook_configs",
+    "drip_campaigns",
+    "drip_steps",
+    "drip_enrollments",
+    "onboarding_progress",
+    "editorial_plans",
+    "editorial_slots",
 ]
 
 

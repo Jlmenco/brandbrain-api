@@ -80,6 +80,12 @@ def create_content_item(body: ContentItemCreate, db: Session = Depends(get_sessi
     db.commit()
     db.refresh(ci)
     log_action(db, org_id, ci.cost_center_id, current_user.id, "create", "content_item", ci.id)
+    # Auto-complete onboarding step
+    try:
+        from app.services.onboarding_service import complete_step
+        complete_step(db, current_user.id, org_id, "first_content")
+    except Exception:
+        pass
     return ci
 
 
@@ -107,6 +113,84 @@ def update_content_item(item_id: str, body: ContentItemUpdate, db: Session = Dep
     db.refresh(ci)
     log_action(db, org_id, ci.cost_center_id, current_user.id, "update", "content_item", ci.id)
     return ci
+
+
+@router.post("/{item_id}/repurpose")
+def repurpose_content(
+    item_id: str,
+    body: dict,
+    db: Session = Depends(get_session),
+    current_user=Depends(get_current_user),
+):
+    """Adapta conteudo para outras plataformas via IA. Body: {target_platforms: ["instagram", "twitter"]}"""
+    ci = db.get(ContentItem, item_id)
+    if not ci:
+        raise HTTPException(status_code=404, detail="Content item not found")
+    org_id = _get_org_id(db, ci.cost_center_id)
+    check_role(db, current_user.id, org_id, EDITOR_ROLES)
+
+    target_platforms = body.get("target_platforms", [])
+    if not target_platforms:
+        raise HTTPException(status_code=400, detail="target_platforms é obrigatório")
+
+    # Remove plataforma original
+    target_platforms = [p for p in target_platforms if p != ci.provider_target]
+    if not target_platforms:
+        raise HTTPException(status_code=400, detail="Todas as plataformas alvo sao iguais a original")
+
+    from app.services.embedding_service import get_embedding_service
+    from app.services.prompt_builder import build_repurpose_prompt
+    from app.services.ai_gateway import get_gateway
+
+    embedding_svc = get_embedding_service()
+    brand_context = embedding_svc.search_brand_context(
+        db=db, influencer_id=ci.influencer_id, query=ci.text[:200], top_k=3,
+    )
+    if not brand_context:
+        from app.models.influencer import BrandKit
+        bk = db.exec(select(BrandKit).where(BrandKit.influencer_id == ci.influencer_id)).first()
+        inf = db.get(Influencer, ci.influencer_id)
+        if bk and inf:
+            chunks = embedding_svc.chunk_brand_kit(inf, bk)
+            brand_context = [
+                {"chunk_type": c["chunk_type"], "chunk_text": c["chunk_text"], "similarity": 1.0}
+                for c in chunks
+            ]
+
+    inf = db.get(Influencer, ci.influencer_id)
+    gateway = get_gateway()
+    created = []
+
+    for platform in target_platforms:
+        system_prompt, user_prompt = build_repurpose_prompt(
+            original_text=ci.text,
+            original_platform=ci.provider_target,
+            target_platform=platform,
+            brand_context_chunks=brand_context,
+            language=inf.language if inf else "pt-BR",
+        )
+
+        import asyncio
+        text = asyncio.run(gateway.generate(
+            prompt=user_prompt, system=system_prompt, temperature=0.7, max_tokens=800,
+        ))
+
+        new_ci = ContentItem(
+            cost_center_id=ci.cost_center_id,
+            influencer_id=ci.influencer_id,
+            provider_target=platform,
+            text=text,
+            status="draft",
+            source_repurpose_id=ci.id,
+        )
+        db.add(new_ci)
+        db.flush()
+        created.append({"id": new_ci.id, "platform": platform, "preview": text[:100]})
+        log_action(db, org_id, ci.cost_center_id, current_user.id, "repurpose", "content_item", new_ci.id,
+                   {"source_id": ci.id, "target_platform": platform})
+
+    db.commit()
+    return {"created": created, "source_id": ci.id}
 
 
 @router.post("/{item_id}/submit-review")

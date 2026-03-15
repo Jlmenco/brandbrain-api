@@ -78,6 +78,16 @@ def main():
         except Exception:
             logger.exception("Error in video job cycle")
 
+        # Processar drip emails pendentes
+        try:
+            from worker.drip_processor import poll_drip_jobs
+            with get_session() as session:
+                drip_processed = poll_drip_jobs(session)
+            if drip_processed > 0:
+                logger.info("Drip emails processed: %d", drip_processed)
+        except Exception:
+            logger.exception("Error in drip email cycle")
+
         _wake_event.wait(timeout=settings.POLL_INTERVAL_SECONDS)
         _wake_event.clear()
 

@@ -187,7 +187,7 @@ from app.routers import (  # noqa: E402
     webhooks,
     usage,
 )
-from app.routers import invites, admin, billing  # noqa: E402
+from app.routers import invites, admin, billing, drip, onboarding, reports, editorial  # noqa: E402
 
 app.include_router(auth.router, prefix="/auth", tags=["Auth"])
 app.include_router(organizations.router, prefix="/orgs", tags=["Organizations"])
@@ -210,3 +210,7 @@ app.include_router(usage.router, prefix="/usage", tags=["Usage & Billing"])
 app.include_router(invites.router, prefix="/invite", tags=["Invites"])
 app.include_router(admin.router, prefix="/admin", tags=["Admin"])
 app.include_router(billing.router, prefix="/billing", tags=["Billing"])
+app.include_router(drip.router, prefix="/drip-campaigns", tags=["Drip Campaigns"])
+app.include_router(onboarding.router, prefix="/onboarding", tags=["Onboarding"])
+app.include_router(reports.router, prefix="/reports", tags=["Reports"])
+app.include_router(editorial.router, prefix="/editorial", tags=["Editorial Planning"])

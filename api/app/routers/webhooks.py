@@ -67,6 +67,18 @@ def create_webhook(
     return hook
 
 
+@router.get("/{webhook_id}", response_model=WebhookResponse)
+def get_webhook(
+    webhook_id: str,
+    db: Session = Depends(get_session),
+    current_user=Depends(get_current_user),
+):
+    hook = db.get(WebhookConfig, webhook_id)
+    if not hook:
+        raise HTTPException(status_code=404, detail="Webhook not found")
+    return hook
+
+
 @router.patch("/{webhook_id}", response_model=WebhookResponse)
 def update_webhook(
     webhook_id: str,
