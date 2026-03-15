@@ -67,10 +67,23 @@ def create_checkout(
         raise HTTPException(status_code=404, detail="Organização não encontrada")
 
     try:
+        # Criar/recuperar cliente no Asaas e salvar ID na org
+        if not org.asaas_customer_id:
+            customer_id = asaas_service.get_or_create_customer(
+                name=org.name or current_user.name or current_user.email,
+                email=current_user.email,
+            )
+            org.asaas_customer_id = customer_id
+            db.add(org)
+            db.commit()
+            db.refresh(org)
+
         url = asaas_service.create_payment_link(org.id, plan)
         if not url:
             raise ValueError("URL vazia retornada pelo Asaas")
         return {"url": url, "plan": plan, "org_id": org.id}
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.error("Erro ao criar link Asaas: %s", exc)
         raise HTTPException(status_code=502, detail="Erro ao gerar link de pagamento")
@@ -120,6 +133,12 @@ async def asaas_webhook(request: Request, db: Session = Depends(get_session)):
 
     org.plan = plan
     org.trial_ends_at = None
+
+    # Salvar asaas_customer_id se veio no payload
+    customer_id = payment.get("customer")
+    if customer_id and not org.asaas_customer_id:
+        org.asaas_customer_id = customer_id
+
     db.add(org)
     db.commit()
 
