@@ -44,6 +44,15 @@ def create_influencer(body: InfluencerCreate, org_id: str = Query(...), db: Sess
     return inf
 
 
+@router.get("/voices")
+async def list_voices(current_user=Depends(get_current_user)):
+    """Lista vozes disponíveis no ElevenLabs para configurar por influenciador."""
+    from app.services.voice_service import VoiceService
+    svc = VoiceService()
+    voices = await svc.list_voices()
+    return {"voices": voices}
+
+
 @router.get("/{influencer_id}", response_model=InfluencerResponse)
 def get_influencer(influencer_id: str, db: Session = Depends(get_session), current_user=Depends(get_current_user)):
     inf = db.get(Influencer, influencer_id)
@@ -252,15 +261,6 @@ async def generate_avatar(
     except Exception as e:
         logger.error("Erro ao gerar avatar para %s: %s", influencer_id, str(e))
         raise HTTPException(status_code=500, detail=f"Erro ao gerar avatar: {str(e)}")
-
-
-@router.get("/voices")
-async def list_voices(current_user=Depends(get_current_user)):
-    """Lista vozes disponíveis no ElevenLabs para configurar por influenciador."""
-    from app.services.voice_service import VoiceService
-    svc = VoiceService()
-    voices = await svc.list_voices()
-    return {"voices": voices}
 
 
 @router.get("/{influencer_id}/avatar")
