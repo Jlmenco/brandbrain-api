@@ -116,3 +116,70 @@ def test_get_brand_kit(client: TestClient, test_influencer):
 def test_get_brand_kit_not_found(client: TestClient, test_influencer):
     resp = client.get(f"/influencers/{test_influencer.id}/brand-kit")
     assert resp.status_code == 404
+
+
+def test_suggest_brand_kit_invalid_field(client: TestClient, test_influencer):
+    resp = client.post(
+        f"/influencers/{test_influencer.id}/brand-kit/suggest",
+        json={"field": "links"},  # links is not in SUPPORTED_FIELDS
+    )
+    assert resp.status_code == 400
+
+
+def test_suggest_brand_kit_influencer_not_found(client: TestClient):
+    resp = client.post(
+        "/influencers/nonexistent-id/brand-kit/suggest",
+        json={"field": "description"},
+    )
+    assert resp.status_code == 404
+
+
+def test_suggest_brand_kit_description_returns_string(client: TestClient, test_influencer, monkeypatch):
+    async def fake_generate(self, prompt, system="", temperature=0.7, max_tokens=1000):
+        return "Uma marca premium focada em qualidade."
+
+    from app.services.ai_gateway import AIGateway
+    monkeypatch.setattr(AIGateway, "generate", fake_generate)
+
+    resp = client.post(
+        f"/influencers/{test_influencer.id}/brand-kit/suggest",
+        json={"field": "description"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["field"] == "description"
+    assert data["suggestion"] == "Uma marca premium focada em qualidade."
+
+
+def test_suggest_brand_kit_value_props_parses_json(client: TestClient, test_influencer, monkeypatch):
+    async def fake_generate(self, prompt, system="", temperature=0.7, max_tokens=1000):
+        return '{"diferencial": "qualidade premium", "expertise": "15 anos de mercado"}'
+
+    from app.services.ai_gateway import AIGateway
+    monkeypatch.setattr(AIGateway, "generate", fake_generate)
+
+    resp = client.post(
+        f"/influencers/{test_influencer.id}/brand-kit/suggest",
+        json={"field": "value_props"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["field"] == "value_props"
+    assert data["suggestion"] == {
+        "diferencial": "qualidade premium",
+        "expertise": "15 anos de mercado",
+    }
+
+
+def test_suggest_brand_kit_handles_invalid_ai_json(client: TestClient, test_influencer, monkeypatch):
+    async def fake_generate(self, prompt, system="", temperature=0.7, max_tokens=1000):
+        return "isso aqui nao eh JSON nenhum"
+
+    from app.services.ai_gateway import AIGateway
+    monkeypatch.setattr(AIGateway, "generate", fake_generate)
+
+    resp = client.post(
+        f"/influencers/{test_influencer.id}/brand-kit/suggest",
+        json={"field": "value_props"},
+    )
+    assert resp.status_code == 502

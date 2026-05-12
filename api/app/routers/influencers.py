@@ -13,6 +13,7 @@ from app.models.influencer import Influencer, BrandKit, InfluencerAsset
 from app.schemas.influencer import (
     InfluencerCreate, InfluencerUpdate, InfluencerResponse,
     BrandKitCreate, BrandKitResponse,
+    BrandKitSuggestRequest, BrandKitSuggestResponse,
 )
 from app.dependencies import get_current_user, check_role, ADMIN_ROLES
 
@@ -121,6 +122,40 @@ def get_brand_kit(influencer_id: str, db: Session = Depends(get_session), curren
     if not bk:
         raise HTTPException(status_code=404, detail="Brand kit not found")
     return bk
+
+
+@router.post("/{influencer_id}/brand-kit/suggest", response_model=BrandKitSuggestResponse)
+async def suggest_brand_kit_field(
+    influencer_id: str,
+    body: BrandKitSuggestRequest,
+    db: Session = Depends(get_session),
+    current_user=Depends(get_current_user),
+):
+    """Gera sugestao IA para um campo do brand kit. Usa dados do influenciador como contexto."""
+    inf = db.get(Influencer, influencer_id)
+    if not inf:
+        raise HTTPException(status_code=404, detail="Influencer not found")
+    check_role(db, current_user.id, inf.org_id, ADMIN_ROLES)
+
+    from app.services.brand_kit_service import SUPPORTED_FIELDS, generate_suggestion
+
+    if body.field not in SUPPORTED_FIELDS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Campo nao suportado. Use um de: {sorted(SUPPORTED_FIELDS)}",
+        )
+
+    bk = db.exec(select(BrandKit).where(BrandKit.influencer_id == influencer_id)).first()
+    try:
+        suggestion = await generate_suggestion(inf, bk, body.field, body.user_hint or "")
+    except (ValueError, json.JSONDecodeError) as e:
+        logger.warning("Falha ao gerar sugestao brand_kit %s: %s", body.field, e)
+        raise HTTPException(status_code=502, detail="A IA retornou um formato invalido. Tente novamente.")
+    except Exception as e:
+        logger.error("Erro inesperado ao gerar sugestao brand_kit %s: %s", body.field, e)
+        raise HTTPException(status_code=500, detail=f"Erro ao gerar sugestao: {e}")
+
+    return {"field": body.field, "suggestion": suggestion}
 
 
 # --- Avatar Generation ---

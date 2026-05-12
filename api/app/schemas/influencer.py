@@ -61,3 +61,13 @@ class BrandKitResponse(BaseModel):
     audience: dict
     style_guidelines: dict
     links: dict
+
+
+class BrandKitSuggestRequest(BaseModel):
+    field: str  # description | value_props | products | audience | style_guidelines
+    user_hint: str = ""
+
+
+class BrandKitSuggestResponse(BaseModel):
+    field: str
+    suggestion: object  # str for description, dict for the others
